@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>LAN Announcements</title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Local Socket.IO client -->
+    <script src="/static/socket.io.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #0f172a;
+            color: white;
+        }
+
+        header {
+            padding: 10px;
+            background: #1e293b;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+        }
+
+        header div {
+            font-weight: bold;
+        }
+
+        #roleSelect, #nameInput, #adminPassword {
+            padding: 8px;
+            border-radius: 5px;
+            border: none;
+        }
+
+        #joinBtn {
+            padding: 8px 12px;
+            border-radius: 5px;
+            border: none;
+            background: #22c55e;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        #joinBtn:hover {
+            background: #16a34a;
+        }
+
+        #statusText {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 2px;
+        }
+
+        main {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 70px);
+        }
+
+        #announceTitle {
+            padding: 8px 10px;
+            background: #111827;
+            border-bottom: 1px solid #1f2937;
+            font-weight: bold;
+        }
+
+        #announceBox {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            background: #020617;
+        }
+
+        .msg {
+            margin: 6px 0;
+            font-size: 14px;
+        }
+
+        .announcement {
+            color: #facc15;
+        }
+
+        .system {
+            color: #38bdf8;
+            font-style: italic;
+        }
+
+        .meta {
+            font-size: 11px;
+            color: #9ca3af;
+        }
+
+        #bottomPanel {
+            display: flex;
+            background: #1e293b;
+            border-top: 1px solid #1f2937;
+        }
+
+        #adminPanel {
+            flex: 2;
+            padding: 10px;
+            font-size: 13px;
+            border-right: 1px solid #1f2937;
+        }
+
+        #adminText {
+            padding: 6px;
+            border-radius: 5px;
+            border: none;
+            width: 100%;
+            box-sizing: border-box;
+            margin-bottom: 5px;
+        }
+
+        #adminSendBtn {
+            padding: 6px;
+            border-radius: 5px;
+            border: none;
+            background: #f59e0b;
+            color: black;
+            cursor: pointer;
+            font-weight: bold;
+            width: 100%;
+        }
+
+        #adminSendBtn:hover {
+            background: #d97706;
+        }
+
+        #userPanel {
+            flex: 1;
+            padding: 10px;
+            font-size: 13px;
+        }
+
+        #userListTitle {
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+
+        #userList {
+            max-height: 120px;
+            overflow-y: auto;
+            font-size: 13px;
+        }
+
+        /* Hide admin-only sections for clients */
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <div>🌐 LAN Announcements</div>
+    <div>
+        <select id="roleSelect">
+            <option value="client">Client</option>
+            <option value="admin">Admin</option>
+        </select>
+        <input id="nameInput" placeholder="Enter name">
+        <input id="adminPassword" placeholder="Admin password (for admin only)" class="hidden">
+        <button id="joinBtn">Join</button>
+        <div id="statusText"></div>
+    </div>
+</header>
+
+<main>
+    <div id="announceTitle">📢 Announcements</div>
+    <div id="announceBox"></div>
+
+    <div id="bottomPanel">
+        <!-- Admin-only announcement panel -->
+        <div id="adminPanel" class="hidden">
+            <div><b>Admin panel:</b> send announcement</div>
+            <input id="adminText" placeholder="Announcement text...">
+            <button id="adminSendBtn">Send announcement</button>
+        </div>
+
+        <!-- Admin-only user list -->
+        <div id="userPanel" class="hidden">
+            <div id="userListTitle">👥 Connected users</div>
+            <div id="userList">
+                <div style="font-size:12px;color:#9ca3af;">
+                    Only visible to admin.
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+    const socket = io();
+
+    const roleSelect = document.getElementById("roleSelect");
+    const nameInput = document.getElementById("nameInput");
+    const adminPasswordInput = document.getElementById("adminPassword");
+    const joinBtn = document.getElementById("joinBtn");
+    const statusText = document.getElementById("statusText");
+
+    const announceBox = document.getElementById("announceBox");
+
+    const adminPanel = document.getElementById("adminPanel");
+    const adminText = document.getElementById("adminText");
+    const adminSendBtn = document.getElementById("adminSendBtn");
+
+    const userPanel = document.getElementById("userPanel");
+    const userListDiv = document.getElementById("userList");
+
+    let myRole = "client";
+    let myName = "";
+
+    // Show/hide password field when role changes
+    roleSelect.addEventListener("change", function () {
+        if (roleSelect.value === "admin") {
+            adminPasswordInput.classList.remove("hidden");
+        } else {
+            adminPasswordInput.classList.add("hidden");
+        }
+    });
+
+    function addMessage(msg, cssClass) {
+        const div = document.createElement("div");
+        div.classList.add("msg");
+        if (cssClass) div.classList.add(cssClass);
+
+        let text = "";
+        if (msg.type === "announcement") {
+            text = `<b>${msg.sender}</b>: ${msg.text}`;
+        } else {
+            text = msg.text;
+        }
+
+        const meta = msg.timestamp ? `<div class="meta">${msg.timestamp}</div>` : "";
+        div.innerHTML = text + meta;
+
+        announceBox.appendChild(div);
+        announceBox.scrollTop = announceBox.scrollHeight;
+    }
+
+    function updateUserList(users) {
+        if (myRole !== "admin") {
+            // Clients ignore the list
+            return;
+        }
+        userListDiv.innerHTML = "";
+        if (!users || users.length === 0) {
+            userListDiv.innerHTML = `<div style="font-size:12px;color:#9ca3af;">
+                No users connected.
+            </div>`;
+            return;
+        }
+        users.forEach(u => {
+            const div = document.createElement("div");
+            div.textContent = `${u.name} (${u.role})`;
+            userListDiv.appendChild(div);
+        });
+    }
+
+    socket.on("connect", () => {
+        console.log("Connected to server");
+    });
+
+    socket.on("connect_error", (err) => {
+        console.error("Connection error:", err);
+    });
+
+    socket.on("history", (history) => {
+        (history.announcements || []).forEach(msg => {
+            addMessage(msg, "announcement");
+        });
+    });
+
+    socket.on("announcement_message", (msg) => {
+        addMessage(msg, "announcement");
+    });
+
+    socket.on("system_message", (msg) => {
+        addMessage(msg, "system");
+    });
+
+    socket.on("user_list", (users) => {
+        updateUserList(users);
+    });
+
+    socket.on("error_message", (msg) => {
+        alert(msg.text || "Error");
+    });
+
+    socket.on("role_confirmed", (data) => {
+        myRole = data.role || "client";
+        if (myRole === "admin") {
+            adminPanel.classList.remove("hidden");
+            userPanel.classList.remove("hidden");
+            statusText.textContent = `Logged in as ADMIN: ${myName}`;
+        } else {
+            adminPanel.classList.add("hidden");
+            userPanel.classList.add("hidden");
+            statusText.textContent = `Logged in as client: ${myName}`;
+        }
+    });
+
+    function joinWithRole() {
+        const role = roleSelect.value;
+        const name = nameInput.value.trim();
+        const pwd  = adminPasswordInput.value.trim();
+
+        if (!name) {
+            alert("Please enter your name.");
+            return;
+        }
+
+        myName = name;
+
+        socket.emit("register_user", {
+            name: name,
+            role: role,
+            admin_password: pwd
+        });
+    }
+
+    joinBtn.addEventListener("click", joinWithRole);
+    nameInput.addEventListener("keypress", function (e) {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            joinWithRole();
+        }
+    });
+
+    function sendAdminAnnouncement() {
+        if (myRole !== "admin") {
+            alert("Only admin can send announcements.");
+            return;
+        }
+        const text = adminText.value.trim();
+        if (!text) return;
+
+        socket.emit("send_announcement", { text: text });
+        adminText.value = "";
+    }
+
+    adminSendBtn.addEventListener("click", sendAdminAnnouncement);
+</script>
+
+</body>
+</html>
